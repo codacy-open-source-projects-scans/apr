@@ -230,6 +230,7 @@ static void test_proc_args(abts_case* tc, void* data)
     ABTS_STR_EQUAL(tc, expected, actual);
 }
 
+#ifdef WIN32
 static void test_proc_args_winbatch(abts_case* tc, void* data)
 {
     const char* args[10];
@@ -300,7 +301,6 @@ static void test_proc_args_winbatch(abts_case* tc, void* data)
     ABTS_STR_EQUAL(tc, expected, actual);
 }
 
-#ifdef WIN32
 static void test_proc_unclosed_quote1(abts_case *tc, void *data)
 {
     apr_procattr_t *attr;

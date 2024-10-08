@@ -47,7 +47,7 @@ endif()
 set(apr_libname libapr-2)
 
 set(APR_XML_BACKEND "xmllite" CACHE STRING "XML library to use (expat|libxml|xmllite)")
-set_property(CACHE APR_XML_BACKEND PROPERTY STRINGS expat libxml2 xmllite)
+set_property(CACHE APR_XML_BACKEND PROPERTY STRINGS "expat;libxml2;xmllite")
 
 option(APR_INSTALL_PRIVATE_H  "Install selected private .h files (for httpd)"  OFF)
 option(APU_HAVE_SQLITE3     "Build SQLite3 DBD driver"     OFF)
