@@ -87,18 +87,28 @@
 #else
 #define APR_USE_OPENSSL_PRE_3_0_API     0
 #endif
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
+#define APR_USE_OPENSSL_PRE_3_5_API     1
+#else
+#define APR_USE_OPENSSL_PRE_3_5_API     0
+#endif
 
 #endif /* defined(LIBRESSL_VERSION_NUMBER) */
 
-#if APR_USE_OPENSSL_PRE_3_0_API \
-    || (defined(OPENSSL_API_LEVEL) && OPENSSL_API_LEVEL < 30000)
+#if APR_USE_OPENSSL_PRE_3_0_API
 #define APR_USE_OPENSSL_ENGINE_API 1
+#define APR_USE_OPENSSL_PROVIDER_API 0
 #else
 #define APR_USE_OPENSSL_ENGINE_API 0
+#define APR_USE_OPENSSL_PROVIDER_API 1
 #endif
 
 #if APR_USE_OPENSSL_ENGINE_API
 #include <openssl/engine.h>
+#endif
+
+#if APR_USE_OPENSSL_PROVIDER_API
+#include <openssl/provider.h>
 #endif
 
 #define LOG_PREFIX "apr_crypto_openssl: "
@@ -118,6 +128,9 @@ struct apr_crypto_config_t {
     ENGINE *engine;
 #else
     void *engine;
+#endif
+#if APR_USE_OPENSSL_PROVIDER_API
+    OSSL_LIB_CTX *libctx;
 #endif
 };
 
@@ -216,9 +229,13 @@ static apr_status_t crypto_shutdown(void)
      * older.
      */
 
+#if APR_USE_OPENSSL_PRE_3_0_API
     ERR_free_strings();
     EVP_cleanup();
+#endif
+#if APR_USE_OPENSSL_ENGINE_API
     ENGINE_cleanup();
+#endif
 #endif
 
     return APR_SUCCESS;
@@ -231,6 +248,8 @@ static apr_status_t crypto_shutdown_helper(void *data)
 
 /**
  * Initialise the crypto library and perform one time initialisation.
+ *
+ * This is a noop from OpenSSL v3+.
  */
 static apr_status_t crypto_init(apr_pool_t *pool, const char *params,
         const apu_err_t **result)
@@ -241,7 +260,9 @@ static apr_status_t crypto_init(apr_pool_t *pool, const char *params,
      *
      * We tell openssl we want to include engine support.
      */
+#if APR_USE_OPENSSL_ENGINE_API
     OPENSSL_init_crypto(OPENSSL_INIT_ENGINE_ALL_BUILTIN, NULL);
+#endif
 
 #else
     /* Configuration below is for legacy versions Openssl v1.0 and
@@ -250,14 +271,20 @@ static apr_status_t crypto_init(apr_pool_t *pool, const char *params,
 
 #if APR_USE_OPENSSL_PRE_1_1_API
     (void)CRYPTO_malloc_init();
-#else
+#elif APR_USE_OPENSSL_PRE_3_0_API
     OPENSSL_malloc_init();
 #endif
+
+#if APR_USE_OPENSSL_PRE_3_0_API
     ERR_load_crypto_strings();
     /* SSL_load_error_strings(); */
     OpenSSL_add_all_algorithms();
+#endif
+
+#if APR_USE_OPENSSL_ENGINE_API
     ENGINE_load_builtin_engines();
     ENGINE_register_all_complete();
+#endif
 #endif
 
     apr_pool_cleanup_register(pool, pool, crypto_shutdown_helper,
@@ -395,6 +422,11 @@ static apr_status_t crypto_cleanup(apr_crypto_t *f)
         f->config->engine = NULL;
     }
 #endif
+#if APR_USE_OPENSSL_PROVIDER_API
+    if (f->config->libctx) {
+        OSSL_LIB_CTX_free(f->config->libctx);
+    }
+#endif
     return APR_SUCCESS;
 
 }
@@ -404,6 +436,15 @@ static apr_status_t crypto_cleanup_helper(void *data)
     apr_crypto_t *f = (apr_crypto_t *) data;
     return crypto_cleanup(f);
 }
+
+#if APR_USE_OPENSSL_PROVIDER_API
+static apr_status_t provider_cleanup(void *data)
+{
+    OSSL_PROVIDER *prov = data;
+    OSSL_PROVIDER_unload(prov);
+    return APR_SUCCESS;
+}
+#endif
 
 /**
  * @brief Create a context for supporting encryption. Keys, certificates,
@@ -439,7 +480,23 @@ static apr_status_t crypto_make(apr_crypto_t **ff,
     char *elt;
     int i = 0, j;
 
+#if APR_USE_OPENSSL_PROVIDER_API
+    OSSL_PROVIDER *prov = NULL;
+    const char *path = NULL;
+#endif
+
     *ff = NULL;
+
+    f = apr_pcalloc(pool, sizeof(apr_crypto_t));
+    if (!f) {
+        return APR_ENOMEM;
+    }
+    f->config = config = apr_pcalloc(pool, sizeof(apr_crypto_config_t));
+    if (!config) {
+        return APR_ENOMEM;
+    }
+    f->pool = pool;
+    f->provider = provider;
 
     if (params) {
         if (APR_SUCCESS != (status = apr_tokenize_to_argv(params, &elts, pool))) {
@@ -468,21 +525,53 @@ static apr_status_t crypto_make(apr_crypto_t **ff,
                 }
             }
 
+#if APR_USE_OPENSSL_PROVIDER_API
+            if (!strcasecmp("provider-path", elt)) {
+                path = ptr;
+            }
+            else if (!strcasecmp("provider", elt)) {
+
+                /* first provider, avoid loading the default by loading null */
+                if (!config->libctx) {
+                    prov = OSSL_PROVIDER_load(NULL, "null");
+                    config->libctx = OSSL_LIB_CTX_new();
+                    if (!config->libctx) {
+                        return APR_ENOMEM;
+                    }
+
+                    apr_pool_cleanup_register(pool, prov, provider_cleanup,
+                                              apr_pool_cleanup_null);
+                }
+
+                if (path) {
+                    OSSL_PROVIDER_set_default_search_path(config->libctx, path);
+                    path = NULL;
+                }
+
+                prov = OSSL_PROVIDER_load(config->libctx, ptr);
+                if (!prov) {
+                    return APR_ENOENGINE;
+                }
+
+                apr_pool_cleanup_register(pool, prov, provider_cleanup,
+                                          apr_pool_cleanup_null);
+            }
+            else if (prov) {
+                /* options after a provider apply to the provider */
+#if !APR_USE_OPENSSL_PRE_3_5_API
+                if (!OSSL_PROVIDER_add_conf_parameter(prov, elt, ptr)) {
+                    return APR_EINVAL;
+                }
+#else
+                return APR_ENOTIMPL;
+#endif
+            }
+#endif
+
             i++;
         }
         engine = fields[0].value;
     }
-
-    f = apr_pcalloc(pool, sizeof(apr_crypto_t));
-    if (!f) {
-        return APR_ENOMEM;
-    }
-    f->config = config = apr_pcalloc(pool, sizeof(apr_crypto_config_t));
-    if (!config) {
-        return APR_ENOMEM;
-    }
-    f->pool = pool;
-    f->provider = provider;
 
     /* The default/builtin "openssl" engine is the same as NULL though with
      * openssl-3+ it's called something else, keep NULL for that name.

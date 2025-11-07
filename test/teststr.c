@@ -94,6 +94,100 @@ static void test_strtok(abts_case *tc, void *data)
     }
 }
 
+static void test_strqtok(abts_case *tc, void *data)
+{
+    char *retval1, *retval2;
+    char *str1, *str2;
+    char *state1, *state2;
+
+    /* test empty string */
+    str1 = str2 = "";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, ",", &state1);
+    retval2 = apr_strqtok(str2, ",", &state2);
+
+    ABTS_TRUE(tc, retval1 == NULL);
+    ABTS_TRUE(tc, retval2 == NULL);
+
+    /* test delimiters only */
+    str1 = str2 = ",";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, ",", &state1);
+    retval2 = apr_strqtok(str2, ",", &state2);
+
+    /* test unquoted string */
+    str1 = str2 = "key";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, "=", &state1);
+    retval2 = apr_strqtok(str2, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "key");
+    ABTS_STR_EQUAL(tc, retval2, "key");
+
+    /* test quoted string */
+    str1 = str2 = "\"key\"";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, "=", &state1);
+    retval2 = apr_strqtok(str2, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "\"key\"");
+    ABTS_STR_EQUAL(tc, retval2, "key");
+
+    /* test quoted key value pair */
+    str1 = str2 = "\"key\"='value'";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, "=", &state1);
+    retval2 = apr_strqtok(str2, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "\"key\"");
+    ABTS_STR_EQUAL(tc, retval2, "key");
+
+    retval1 = apr_strtok(NULL, "=", &state1);
+    retval2 = apr_strqtok(NULL, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "'value'");
+    ABTS_STR_EQUAL(tc, retval2, "value");
+
+    retval1 = apr_strtok(NULL, "=", &state1);
+    retval2 = apr_strqtok(NULL, "=", &state2);
+
+    ABTS_TRUE(tc, retval1 == NULL);
+    ABTS_TRUE(tc, retval2 == NULL);
+
+    /* test quoted against quoted */
+    str1 = str2 = "\"k\"'ey'";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, "=", &state1);
+    retval2 = apr_strqtok(str2, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "\"k\"'ey'");
+    ABTS_STR_EQUAL(tc, retval2, "key");
+
+    /* test escapes, unquoted against quoted */
+    str1 = str2 = "outside\\'in\\'sid=e'";
+    str1 = apr_pstrdup(p, str1);
+    str2 = apr_pstrdup(p, str2);
+
+    retval1 = apr_strtok(str1, "=", &state1);
+    retval2 = apr_strqtok(str2, "=", &state2);
+
+    ABTS_STR_EQUAL(tc, retval1, "outside\\'in\\'sid");
+    ABTS_STR_EQUAL(tc, retval2, "outside\\in'sid=e");
+
+}
+
 static void snprintf_noNULL(abts_case *tc, void *data)
 {
     char buff[100];
@@ -408,6 +502,101 @@ static void pstrcat(abts_case *tc, void *data)
                    "abcdefghij12345");
 }
 
+#define TIMINGSAFE_RANDS_NUM 20u
+#define TIMINGSAFE_RANDS_LEN 32u
+static void timingsafe(abts_case *tc, void *data)
+{
+    struct {
+        const char *sec;
+        const char *str;
+        int eq_res;
+        int neq_res;
+        apr_size_t neq_n;
+    } sample[] = {
+        {"",    "",     1,  1,  0},
+        {"",    "",     1,  1,  1},
+        {"a",   "a",    1,  1,  1},
+        {"a",   "a",    1,  1,  2},
+        {"a",   "b",    0,  0,  1},
+        {"a",   "aa",   0,  1,  1},
+        {"a",   "aa",   0,  0,  2},
+        {"a",   "aa",   0,  0,  3},
+        {"aa",  "a",    0,  1,  1},
+        {"aa",  "a",    0,  0,  2},
+        {"aa",  "a",    0,  0,  3},
+        {"aa",  "aa",   1,  1,  1},
+        {"aa",  "aa",   1,  1,  2},
+        {"aa",  "aa",   1,  1,  3},
+        {"ab",  "ba",   0,  0,  1},
+        {"ab",  "ba",   0,  0,  2},
+        {"ab",  "ba",   0,  0,  3},
+        {NULL,}
+    }, *sp;
+    struct {
+        char str[TIMINGSAFE_RANDS_LEN+1];
+        apr_size_t len;
+    } rands[TIMINGSAFE_RANDS_NUM];
+    apr_size_t i, j, k;
+    int res;
+
+    /* test the sample */
+    for (sp = sample; sp->sec; ++sp) {
+        res = apr_streq_timingsafe(sp->sec, sp->str);
+        ABTS_INT_EQUAL(tc, strcmp(sp->sec, sp->str) == 0, res);
+        ABTS_INT_EQUAL(tc, sp->eq_res, res);
+
+        res = apr_strneq_timingsafe(sp->sec, sp->str, sp->neq_n);
+        ABTS_INT_EQUAL(tc, strncmp(sp->sec, sp->str, sp->neq_n) == 0, res);
+        ABTS_INT_EQUAL(tc, sp->neq_res, res);
+
+        if (strlen(sp->sec) == strlen(sp->str)) {
+            res = apr_memeq_timingsafe(sp->sec, sp->str, strlen(sp->sec));
+            ABTS_INT_EQUAL(tc, memcmp(sp->sec, sp->str, strlen(sp->sec)) == 0, res);
+            ABTS_INT_EQUAL(tc, sp->eq_res, res);
+        }
+    }
+
+    /* test random strings */
+    memset(rands, 0, sizeof(rands)); /* zero init/pad the whole */
+    for (i = 0; i < TIMINGSAFE_RANDS_NUM; ++i) {
+        unsigned char randlen = 0;
+        apr_generate_random_bytes((void *)&randlen, sizeof(randlen));
+        rands[i].len = (unsigned int)randlen % TIMINGSAFE_RANDS_LEN;
+        apr_generate_random_bytes((void *)rands[i].str, rands[i].len);
+    }
+    for (i = 0; i < TIMINGSAFE_RANDS_NUM; ++i) {
+        for (j = i; j < TIMINGSAFE_RANDS_NUM; ++j) {
+            for (k = (j == i); k < 2; ++k) { /* both ways for j != i */
+                apr_size_t i1 = (k) ? j : i,
+                           i2 = (k) ? i : j;
+                const char *s1 = rands[i1].str,
+                           *s2 = rands[i2].str;
+                unsigned int n1 = rands[i1].len,
+                             n2 = rands[i2].len;
+
+                ABTS_INT_EQUAL(tc, strcmp(s1, s2) == 0,
+                               apr_streq_timingsafe(s1, s2));
+
+                ABTS_INT_EQUAL(tc, strncmp(s1, s2, n1) == 0,
+                               apr_strneq_timingsafe(s1, s2, n1));
+                ABTS_INT_EQUAL(tc, strncmp(s1, s2, n2) == 0,
+                               apr_strneq_timingsafe(s1, s2, n2));
+                
+                /* including trailing \0 */
+                ABTS_INT_EQUAL(tc, strncmp(s1, s2, n1 + 1) == 0,
+                               apr_strneq_timingsafe(s1, s2, n1 + 1));
+                ABTS_INT_EQUAL(tc, strncmp(s1, s2, n2 + 1) == 0,
+                               apr_strneq_timingsafe(s1, s2, n2 + 1));
+
+                ABTS_INT_EQUAL(tc, memcmp(s1, s2, n1) == 0,
+                               apr_memeq_timingsafe(s1, s2, n1));
+                ABTS_INT_EQUAL(tc, memcmp(s1, s2, n2) == 0,
+                               apr_memeq_timingsafe(s1, s2, n2));
+            }
+        }
+    }
+}
+
 abts_suite *teststr(abts_suite *suite)
 {
     suite = ADD_SUITE(suite)
@@ -417,6 +606,7 @@ abts_suite *teststr(abts_suite *suite)
     abts_run_test(suite, snprintf_noNULL, NULL);
     abts_run_test(suite, snprintf_underflow, NULL);
     abts_run_test(suite, test_strtok, NULL);
+    abts_run_test(suite, test_strqtok, NULL);
     abts_run_test(suite, string_error, NULL);
     abts_run_test(suite, string_long, NULL);
     abts_run_test(suite, string_strtoi64, NULL);
@@ -427,6 +617,7 @@ abts_suite *teststr(abts_suite *suite)
     abts_run_test(suite, snprintf_overflow, NULL);
     abts_run_test(suite, skip_prefix, NULL);
     abts_run_test(suite, pstrcat, NULL);
+    abts_run_test(suite, timingsafe, NULL);
 
     return suite;
 }

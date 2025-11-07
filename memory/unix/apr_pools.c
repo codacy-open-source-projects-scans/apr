@@ -1618,8 +1618,14 @@ static void apr_pool_check_lifetime(apr_pool_t *pool)
      * ok, since the only user is apr_pools.c.  Unless
      * people have searched for the top level parent and
      * started to use that...
+     * Like the global pool, unmanaged pools have their
+     * own lifetime and no ->parent, ignore both here.
+     * Last (internal) case is from apr_pool_create_ex_debug()
+     * where pool->mutex is created before attaching to the
+     * parent, hence an allocation happens with no ->parent
+     * nor lifetime to be checked here.
      */
-    if (pool == global_pool || global_pool == NULL)
+    if (pool->parent == NULL)
         return;
 
     /* Lifetime
@@ -2077,6 +2083,8 @@ APR_DECLARE(apr_status_t) apr_pool_create_ex_debug(apr_pool_t **newpool,
          */
         if ((rv = apr_thread_mutex_create(&pool->mutex,
                 APR_THREAD_MUTEX_NESTED, pool)) != APR_SUCCESS) {
+            if (abort_fn)
+                abort_fn(rv);
             free(pool);
             return rv;
         }
@@ -2135,26 +2143,6 @@ APR_DECLARE(apr_status_t) apr_pool_create_unmanaged_ex_debug(apr_pool_t **newpoo
     pool->file_line = file_line;
 
 #if APR_HAS_THREADS
-    {
-        apr_status_t rv;
-
-        /* No matter what the creation flags say, always create
-         * a lock.  Without it integrity_check and apr_pool_num_bytes
-         * blow up (because they traverse pools child lists that
-         * possibly belong to another thread, in combination with
-         * the pool having no lock).  However, this might actually
-         * hide problems like creating a child pool of a pool
-         * belonging to another thread.
-         */
-        if ((rv = apr_thread_mutex_create(&pool->mutex,
-                APR_THREAD_MUTEX_NESTED, pool)) != APR_SUCCESS) {
-            free(pool);
-            return rv;
-        }
-    }
-#endif /* APR_HAS_THREADS */
-
-#if APR_HAS_THREADS
     pool->owner = apr_os_thread_current();
 #endif /* APR_HAS_THREADS */
 #ifdef NETWARE
@@ -2171,6 +2159,31 @@ APR_DECLARE(apr_status_t) apr_pool_create_unmanaged_ex_debug(apr_pool_t **newpoo
         pool_allocator->owner = pool;
     }
     pool->allocator = pool_allocator;
+
+#if APR_HAS_THREADS
+    {
+        apr_status_t rv;
+
+        /* No matter what the creation flags say, always create
+         * a lock.  Without it integrity_check and apr_pool_num_bytes
+         * blow up (because they traverse pools child lists that
+         * possibly belong to another thread, in combination with
+         * the pool having no lock).  However, this might actually
+         * hide problems like creating a child pool of a pool
+         * belonging to another thread.
+         */
+        if ((rv = apr_thread_mutex_create(&pool->mutex,
+                APR_THREAD_MUTEX_NESTED, pool)) != APR_SUCCESS) {
+            if (abort_fn)
+                abort_fn(rv);
+            /* Free the allocator created/owned above eventually */
+            if (pool_allocator->owner == pool)
+                apr_allocator_destroy(pool_allocator);
+            free(pool);
+            return rv;
+        }
+    }
+#endif /* APR_HAS_THREADS */
 
 #if (APR_POOL_DEBUG & APR_POOL_DEBUG_VERBOSE)
     apr_pool_log_event(pool, "CREATEU", file_line, 1);

@@ -193,6 +193,54 @@ APR_DECLARE_NONSTD(char *) apr_psprintf(apr_pool_t *p, const char *fmt, ...)
 APR_DECLARE(apr_status_t) apr_memzero_explicit(void *buffer, apr_size_t size);
 
 /**
+ * Check whether two buffers of equal size have the same content, using a
+ * constant time algorithm (branch-less with regard to the content of the
+ * buffers and an execution time solely dependent on the number of bytes
+ * compared, not the bytes themselves).
+ *
+ * @param buf1 first buffer to compare
+ * @param buf2 second buffer to compare
+ * @param n number of bytes to compare
+ * @return 1 if equal, 0 otherwise
+ */
+APR_DECLARE(int) apr_memeq_timingsafe(const void *buf1, const void *buf2,
+                                      apr_size_t n);
+
+/**
+ * Check whether two NUL-terminated strings have the same content, using a
+ * constant time algorithm (branch-less with regard to the content of the
+ * secret string and an execution time solely dependent on the length of
+ * the non-secret string). The secret string of the two should be set in
+ * the first parameter \c sec1 to avoid leaking its length.
+ *
+ * @param sec1 first string to compare (the secret one)
+ * @param str2 second string to compare
+ * @return 1 if equal, 0 otherwise
+ * @remark The function will compare as much characters as there are in
+ *         \c str2, so the length of \c str2 might leak through side channel,
+ *         while the length of \c sec1 does not.
+ */
+APR_DECLARE(int) apr_streq_timingsafe(const char *sec1, const char *str2);
+
+/**
+ * Check whether two NUL-terminated strings have the same content, up to \c n
+ * characters, using a constant time algorithm (branch-less with regard to the
+ * content of the secret string and an execution time solely dependent on the
+ * length of the non-secret string or \c n). The secret string of the two
+ * should be set in the first parameter \c sec1 to avoid leaking its length.
+ *
+ * @param sec1 secret string to compare
+ * @param str2 string to compare with
+ * @param n max number of characters to compare
+ * @return 1 if equal, 0 otherwise
+ * @remark The function will compare as much characters as there are in
+ *         \c str2 if it's less than \c n, so the length of \c str2 might
+ *         leak through side channel, while the length of \c sec1 does not.
+ */
+APR_DECLARE(int) apr_strneq_timingsafe(const char *sec1, const char *str2,
+                                       apr_size_t n);
+
+/**
  * Copy up to dst_size characters from src to dst; does not copy
  * past a NUL terminator in src, but always terminates dst with a NUL
  * regardless.
@@ -243,18 +291,39 @@ APR_DECLARE(apr_status_t) apr_tokenize_to_argv(const char *arg_str,
  * argument.
  * @param str The string to separate; this should be specified on the
  *            first call to apr_strtok() for a given string, and NULL
- *            on subsequent calls.
+ *            on subsequent calls. This string is modified in place.
  * @param sep The set of delimiters
  * @param last State saved by apr_strtok() between calls.
  * @return The next token from the string
  * @note the 'last' state points to the trailing NUL char of the final
  * token, otherwise it points to the character following the current
- * token (all successive or empty occurances of sep are skiped on the
+ * token (all successive or empty occurances of sep are skipped on the
  * subsequent call to apr_strtok).  Therefore it is possible to avoid
  * a strlen() determination, with the following logic;
  * toklen = last - retval; if (*last) --toklen;
  */
 APR_DECLARE(char *) apr_strtok(char *str, const char *sep, char **last);
+
+/**
+ * Split a string into separate null-terminated possibly quoted tokens.
+ * The tokens are delimited in the string by one or more characters
+ * from the sep argument. A quoted token may be separated by single or
+ * double quotes, and quoted sections may appear more than once in each
+ * token. The backslash character escapes each quote. The apr_strqtok
+ * function can be used interchangeably with the apr_strtok function
+ * using the same state variable.
+ * @param str The string to separate; this should be specified on the
+ *            first call to apr_strtok() for a given string, and NULL 
+ *            on subsequent calls. This string is modified in place.
+ * @param sep The set of delimiters
+ * @param last State saved by apr_strqtok() between calls.
+ * @return The next token from the string
+ * @note while the 'last' state points to the trailing NUL char of the
+ * final token, otherwise it points to the character following the
+ * current token, no string length can be inferred as quoted characters
+ * and backslash escape characters are removed from the final token.
+ */
+APR_DECLARE(char *) apr_strqtok(char *str, const char *sep, char **last);
 
 /**
  * @defgroup APR_Strings_Snprintf snprintf implementations

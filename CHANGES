@@ -1,6 +1,23 @@
                                                      -*- coding: utf-8 -*-
 Changes for APR 2.0.0
 
+  *) apr_wait_for_io_or_timeout: Fix integer overflow for larger timeout values.
+     PR 69542 [Alejandro Perez <alejandroperezpestana99@gmail.com>]
+
+  *) apr_strings: Add apr_strqtok() function to tokenise quoted strings.
+     [Graham Leggett]
+
+  *) apr_uri: Update apr_uri_parse() and apr_uri_unparse() to decode / encode
+     a % separating a zone identifier in an IPv6 literal if detected following
+     RFC6874. PR69754. [Jens Finkhaeuser <jens@finkhaeuser.de>, Ruediger Pluem]
+
+  *) apr_crypto_openssl: Add provider support on OpenSSL3+.
+     [Graham Leggett]
+
+  *) apr_ldap: Add write capability to the LDAP API. Support for
+     add, modify, rename, delete, and extended operations.
+     [Graham Leggett]
+
   *) apr_ldap: Explicitly detect the case where OpenLDAP has been
      installed with SASL support, but the SASL headers are missing.
      [Graham Leggett]

@@ -439,14 +439,13 @@ eval "ac_decision_msg=\"\$ac_decision_${ac_decision}_msg\""
 
 define(APR_END_DECISION,[dnl
 if test ".$ac_decision" = .; then
-    echo "[$]0:Error: decision on $ac_decision_item failed" 1>&2
-    exit 1
+    AC_MSG_ERROR([decision on $ac_decision_item failed])
 else
     if test ".$ac_decision_msg" = .; then
         ac_decision_msg="$ac_decision"
     fi
     AC_DEFINE_UNQUOTED(${ac_decision_item})
-    AC_MSG_RESULT([decision on $ac_decision_item... $ac_decision_msg])
+    AC_MSG_NOTICE([decision on $ac_decision_item... $ac_decision_msg])
 fi
 ])
 
@@ -467,19 +466,11 @@ AC_DEFUN([APR_TRY_COMPILE_NO_WARNING],
    CFLAGS="$CFLAGS -Werror"
  fi
  AC_COMPILE_IFELSE(
-  [AC_LANG_SOURCE(
-   [
-#ifndef PACKAGE_NAME
-#include "confdefs.h"
-#endif
-   ]
-   [[$1]]
-   [int main(int argc, const char *const *argv) {]
-   [[$2]]
-   [   return 0; }]
-  )], [CFLAGS=$apr_save_CFLAGS
-$3],  [CFLAGS=$apr_save_CFLAGS
-$4])
+  [AC_LANG_PROGRAM([[$1]], [[$2]])],
+  [CFLAGS=$apr_save_CFLAGS
+   $3],
+  [CFLAGS=$apr_save_CFLAGS
+   $4])
 ])
 
 dnl
@@ -775,8 +766,7 @@ if test -z "$LAYOUT"; then
 fi
 APR_LAYOUT($srcdir/config.layout, $LAYOUT, $2)
 
-AC_MSG_CHECKING(for chosen layout)
-AC_MSG_RESULT($layout_name)
+AC_MSG_NOTICE([chosen layout: $layout_name])
 ])
 
 

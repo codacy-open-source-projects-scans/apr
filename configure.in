@@ -156,12 +156,14 @@ if test "x$host_alias" != x; then
     APR_CROSS_COMPILING=maybe
   elif test "x$build_alias" != "x$host_alias"; then
     APR_CROSS_COMPILING=yes
+  else
+    APR_CROSS_COMPILING=no
   fi
 else
     APR_CROSS_COMPILING=no
 fi
-
 AC_SUBST(APR_CROSS_COMPILING)
+AC_MSG_NOTICE([cross-compilation detection: $APR_CROSS_COMPILING])
 
 # Libtool might need this symbol -- it must point to the location of
 # the generated libtool script (not necessarily the "top" build dir).
@@ -1831,6 +1833,7 @@ AC_TYPE_UID_T
 AC_CHECK_TYPE(ssize_t, int)
 AC_C_INLINE
 AC_C_CONST
+AC_C_VARARRAYS
 AC_FUNC_SETPGRP
 
 APR_CHECK_SOCKLEN_T
@@ -1925,6 +1928,8 @@ else
     # a 64-bit value but APR does not agree.
     AC_ERROR([could not detect a 64-bit integer type])
 fi
+
+AC_MSG_NOTICE([for apr_(u)int64_t using $int64_strfn and ${int64_value}/${uint64_value}])
 
 # If present, allow the C99 macro INT64_C to override our conversion.
 #
@@ -2107,7 +2112,6 @@ else
     aprlfs=0     
 fi
 
-AC_MSG_CHECKING([which type to use for apr_off_t])
 if test "${ac_cv_sizeof_off_t}${apr_cv_use_lfs64}" = "4yes"; then
     # LFS is go!
     off_t_fmt='#define APR_OFF_T_FMT APR_INT64_T_FMT'
@@ -2163,7 +2167,7 @@ else
     off_t_strfn='strtoi'
     off_t_size=4
 fi
-AC_MSG_RESULT($off_t_value)
+AC_MSG_NOTICE([for apr_off_t using $off_t_strfn and $off_t_value])
 
 
 # Regardless of whether _LARGEFILE64_SOURCE is used, on some
@@ -2195,7 +2199,7 @@ case $host in
     fi
     ;;
 esac
-AC_MSG_NOTICE([using $ino_t_value for ino_t])
+AC_MSG_NOTICE([for apr_ino_t using $ino_t_value])
 
 # Checks for endianness
 AC_C_BIGENDIAN
@@ -2417,18 +2421,6 @@ if test -z "$have_proc_invoked"; then
 fi
 
 AC_SUBST(have_proc_invoked)
-
-AC_MSG_CHECKING(for Variable Length Arrays)
-APR_TRY_COMPILE_NO_WARNING([#include <stdio.h>],
-[
-    int foo[argc];
-    foo[0] = 0;
-    printf("%d\n", foo[0]);
-], vla_msg=yes, vla_msg=no )
-AC_MSG_RESULT([$vla_msg])
-if test "$vla_msg" = "yes"; then
-    AC_DEFINE(HAVE_VLA, 1, [Define if C compiler supports VLA])
-fi
 
 AC_CACHE_CHECK(struct rlimit,ac_cv_struct_rlimit,[
 AC_TRY_RUN([
