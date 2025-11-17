@@ -355,7 +355,7 @@ static const char * quote_arg(const char *str, apr_pool_t *pool)
             ch++;
         }
 
-        if (*ch == 0) {
+        if (*ch == '\0') {
             /* Escape backslashes. */
             needed += backslash_count * 2;
             break;
@@ -391,7 +391,7 @@ static const char * quote_arg(const char *str, apr_pool_t *pool)
             ch++;
         }
 
-        if (*ch == 0) {
+        if (*ch == '\0') {
             memset(dst, '\\', backslash_count * 2);
             dst += backslash_count * 2;
             break;
@@ -408,7 +408,7 @@ static const char * quote_arg(const char *str, apr_pool_t *pool)
         }
     }
     *dst++ = '"';
-    *dst = 0;
+    *dst = '\0';
 
     return escaped;
 }
@@ -479,7 +479,6 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *new,
 {
     apr_status_t rv;
     apr_size_t i;
-    const char *argv0;
     char *cmdline;
     apr_wchar_t *pEnvBlock;
     PROCESS_INFORMATION pi;
@@ -550,15 +549,18 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *new,
         }
     }
 
-    if (has_space(progname)) {
-        argv0 = apr_pstrcat(pool, "\"", progname, "\"", NULL);
-    }
-    else {
-        argv0 = progname;
-    }
-
     if (attr->cmdtype == APR_SHELLCMD || attr->cmdtype == APR_SHELLCMD_ENV) {
-        char *shellcmd = getenv("COMSPEC");
+        const char *argv0;
+        const char *shellcmd;
+
+        if (has_space(progname)) {
+            argv0 = apr_pstrcat(pool, "\"", progname, "\"", NULL);
+        }
+        else {
+            argv0 = progname;
+        }
+
+        shellcmd = getenv("COMSPEC");
         if (!shellcmd) {
             if (attr->errfn) {
                 attr->errfn(pool, APR_EINVAL, "COMSPEC envar is not set");
@@ -600,7 +602,17 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *new,
         if (i >= 4 && (strcasecmp(progname + i - 4, ".bat") == 0
                     || strcasecmp(progname + i - 4, ".cmd") == 0))
         {
-            char *shellcmd = getenv("COMSPEC");
+            const char *argv0;
+            const char *shellcmd;
+
+            if (has_space(progname)) {
+                argv0 = apr_pstrcat(pool, "\"", progname, "\"", NULL);
+            }
+            else {
+                argv0 = progname;
+            }
+
+            shellcmd = getenv("COMSPEC");
             if (!shellcmd) {
                 if (attr->errfn) {
                     attr->errfn(pool, APR_EINVAL, "COMSPEC envar is not set");
@@ -648,6 +660,15 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *new,
             }
         }
         else {
+            const char *argv0;
+
+            if (has_space(progname)) {
+                argv0 = apr_pstrcat(pool, "\"", progname, "\"", NULL);
+            }
+            else {
+                argv0 = progname;
+            }
+
             /* A simple command we are directly invoking.
              * Handle the args, seperate from argv0 */
             cmdline = apr_pstrdup(pool, argv0);
